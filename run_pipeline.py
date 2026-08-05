@@ -44,7 +44,7 @@ def main():
     input_dir = "input"
     trace_file = "trace.jsonl"
     
-    # Chuẩn bị file trace.jsonl mới (ghi đè lượt chạy mới nhất)
+    # Xóa file trace.jsonl cũ nếu tồn tại để ghi đè lượt chạy mới nhất
     if os.path.exists(trace_file):
         os.remove(trace_file)
 
@@ -57,49 +57,56 @@ def main():
     start_time = time.time()
     successful_cases = 0
 
-    with open(trace_file, "a", encoding="utf-8") as trace_f:
-        for filename in input_files:
-            file_path = os.path.join(input_dir, filename)
-            
-            with open(file_path, "r", encoding="utf-8") as f:
-                input_data = json.load(f)
+    for idx, filename in enumerate(input_files, start=1):
+        file_path = os.path.join(input_dir, filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            input_data = json.load(f)
 
-            case_id = input_data["case_id"]
-            claimed_order_id = input_data["customer_request"]["claimed_order_id"]
-            policy_version = input_data.get("policy_version", "EC_POLICY_V2")
+        case_id = input_data["case_id"]
+        claimed_order_id = input_data["customer_request"]["claimed_order_id"]
+        policy_version = input_data.get("policy_version", "EC_POLICY_V2")
 
-            # Giai đoạn 1: Khởi tạo State ban đầu
-            state = AgentHandoffState(
-                case_id=case_id,
-                claimed_order_id=claimed_order_id,
-                policy_version=policy_version
-            )
+        print(f"⌛ [{idx}/{len(input_files)}] Đang xử lý Case: {case_id}...")
 
-            # Giai đoạn 2 & 3: Chạy luồng Handoff qua từng Agent
-            state = customer_agent.process(state)
-            state = order_product_agent.process(state)
-            state = delivery_agent.process(state)
-            state = payment_agent.process(state)
-            state = policy_agent.process(state)
+        # Giai đoạn 1: Khởi tạo State ban đầu
+        state = AgentHandoffState(
+            case_id=case_id,
+            claimed_order_id=claimed_order_id,
+            policy_version=policy_version
+        )
 
-            # Giai đoạn 4: QC & Export JSON Output
-            final_output = verifier_agent.process_and_export(state)
-            successful_cases += 1
+        # Giai đoạn 2 & 3: Chạy luồng Handoff qua từng Agent
+        state = customer_agent.process(state)
+        state = order_product_agent.process(state)
+        state = delivery_agent.process(state)
+        state = payment_agent.process(state)
+        state = policy_agent.process(state)
 
-            # Ghi Log Handoff Trace vào trace.jsonl theo yêu cầu đề bài
-            trace_entry = {
-                "case_id": case_id,
-                "claimed_order_id": claimed_order_id,
-                "primary_issue": state.primary_issue,
-                "secondary_issues": state.secondary_issues,
-                "recommended_refund_brl": state.recommended_refund_brl,
-                "resolution_actions": state.resolution_actions,
-                "status": "COMPLETED"
-            }
+        # Giai đoạn 4: QC & Export JSON Output
+        final_output = verifier_agent.process_and_export(state)
+        successful_cases += 1
+
+        # Ghi Log Handoff Trace vào trace.jsonl theo từng case và FLUSH ngay lập tức
+        trace_entry = {
+            "case_id": case_id,
+            "claimed_order_id": claimed_order_id,
+            "primary_issue": state.primary_issue,
+            "secondary_issues": state.secondary_issues,
+            "recommended_refund_brl": state.recommended_refund_brl,
+            "resolution_actions": state.resolution_actions,
+            "status": "COMPLETED"
+        }
+        
+        with open(trace_file, "a", encoding="utf-8") as trace_f:
             trace_f.write(json.dumps(trace_entry, ensure_ascii=False) + "\n")
+            trace_f.flush()  # Ép xả bộ đệm ghi trực tiếp xuống ổ đĩa
+
+        # Cho Mac M1 nghỉ 1 giây để xả RAM/GPU giữa các case
+        time.sleep(1)
 
     total_time = round(time.time() - start_time, 2)
-    print(f"🎉 Hoàn tất {successful_cases}/{len(input_files)} cases trong {total_time}s!")
+    print(f"\n🎉 Hoàn tất {successful_cases}/{len(input_files)} cases trong {total_time}s!")
     print(f"📁 Kết quả JSON đã ghi tại thư mục: output/")
     print(f"📝 Trace chạy đã ghi tại: {trace_file}")
 
