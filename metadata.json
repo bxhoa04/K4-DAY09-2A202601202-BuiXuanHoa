@@ -1,0 +1,8 @@
+{
+    "model_name": "qwen2.5:7b",
+    "parameter_size": "7B",
+    "framework": "Ollama Local API / Python standard library",
+    "runtime": "Python 3.10+",
+    "hardware": "Local GPU / CPU",
+    "agents_architecture": "Coordinator-Specialist Multi-Agent Architecture"
+  }
